@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Battle Bricks - 3D TD Game</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #050510;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            user-select: none;
+        }
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+        }
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .stats-panel {
+            pointer-events: auto;
+            background: rgba(15, 15, 30, 0.85);
+            border: 2px solid #445588;
+            border-radius: 12px;
+            padding: 15px 25px;
+            color: #fff;
+            font-size: 18px;
+            width: fit-content;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+        }
+        .controls-panel {
+            pointer-events: auto;
+            align-self: center;
+            background: rgba(15, 15, 30, 0.85);
+            border: 2px solid #445588;
+            border-radius: 16px;
+            padding: 15px 30px;
+            display: flex;
+            gap: 15px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+            margin-bottom: 20px;
+        }
+        button {
+            background: linear-gradient(135deg, #ffaa00, #e67e22);
+            border: none;
+            color: #111;
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            box-shadow: 0 4px 0 #b36200;
+            transition: all 0.1s ease;
+        }
+        button:hover {
+            filter: brightness(1.1);
+        }
+        button:active {
+            transform: translateY(3px);
+            box-shadow: 0 1px 0 #b36200;
+        }
+        button:disabled {
+            background: #444;
+            color: #888;
+            box-shadow: 0 4px 0 #222;
+            cursor: not-allowed;
+            transform: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="canvas-container"></div>
+
+    <div id="ui-layer">
+        <div class="stats-panel">
+            ⚔️ <b>The Battle Bricks (Demo)</b><br>
+            💰 Gold: <span id="gold">100</span> G
+        </div>
+
+        <div class="controls-panel">
+            <button id="btn-noob" onclick="spawnNoob()">🛡️ เรียก Noob (50G)</button>
+        </div>
+    </div>
+
+    <!-- โหลด Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <script>
+        // --- 1. SETUP SCENE & CAMERA ---
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0a0a18); // ท้องฟ้าดาร์กแฟนตาซี
+        scene.fog = new THREE.FogExp2(0x0a0a18, 0.015);
+
+        const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 8, 25);
+        camera.lookAt(0, 2, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        container.appendChild(renderer.domElement);
+
+        // --- 2. LIGHTS (จัดแสงโทนส้ม-น้ำเงินดาร์กๆ) ---
+        const ambientLight = new THREE.AmbientLight(0x334466, 0.8);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffddaa, 1.2);
+        dirLight.position.set(10, 20, 15);
+        dirLight.castShadow = true;
+        scene.add(dirLight);
+
+        // --- 3. ENVIRONMENT (ถนนหินและป้อม) ---
+        // ถนน
+        const roadGeo = new THREE.BoxGeometry(100, 1, 6);
+        const roadMat = new THREE.MeshStandardMaterial({ color: 0x222233, roughness: 0.8 });
+        const road = new THREE.Mesh(roadGeo, roadMat);
+        road.position.set(0, -0.5, 0);
+        road.receiveShadow = true;
+        scene.add(road);
+
+        // ฐานฝั่งเรา (ซ้าย - สีฟ้า)
+        const baseGeo = new THREE.BoxGeometry(4, 8, 6);
+        const playerBase = new THREE.Mesh(baseGeo, new THREE.MeshStandardMaterial({ color: 0x2266ff }));
+        playerBase.position.set(-40, 4, 0);
+        playerBase.castShadow = true;
+        scene.add(playerBase);
+
+        // ฐานฝั่งศัตรู (ขวา - สีแดง)
+        const enemyBase = new THREE.Mesh(baseGeo, new THREE.MeshStandardMaterial({ color: 0xff2244 }));
+        enemyBase.position.set(40, 4, 0);
+        enemyBase.castShadow = true;
+        scene.add(enemyBase);
+
+        // --- 4. ROBLOX NOOB CHARACTER BUILDER ---
+        function createRobloxNoob() {
+            const character = new THREE.Group();
+
+            // Materials
+            const yellowMat = new THREE.MeshStandardMaterial({ color: 0xffcc00, roughness: 0.4 }); // หัว, แขน
+            const blueMat = new THREE.MeshStandardMaterial({ color: 0x0044ff, roughness: 0.4 });   // เสื้อ
+            const greenMat = new THREE.MeshStandardMaterial({ color: 0x00cc44, roughness: 0.4 });  // กางเกง
+
+            // Head (ทรงกระบอก Roblox)
+            const head = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 1, 16), yellowMat);
+            head.position.y = 2.1;
+            head.castShadow = true;
+            character.add(head);
+
+            // Torso (ลำตัว)
+            const torso = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.4, 0.7), blueMat);
+            torso.position.y = 1.0;
+            torso.castShadow = true;
+            character.add(torso);
+
+            // Left Arm
+            const leftArm = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.3, 0.5), yellowMat);
+            leftArm.position.set(-0.95, 0.95, 0);
+            leftArm.castShadow = true;
+            character.add(leftArm);
+
+            // Right Arm
+            const rightArm = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.3, 0.5), yellowMat);
+            rightArm.position.set(0.95, 0.95, 0);
+            rightArm.castShadow = true;
+            character.add(rightArm);
+
+            // Left Leg
+            const leftLeg = new THREE.Mesh(new THREE.BoxGeometry(0.65, 1.3, 0.6), greenMat);
+            leftLeg.position.set(-0.35, -0.35, 0);
+            leftLeg.castShadow = true;
+            character.add(leftLeg);
+
+            // Right Leg
+            const rightLeg = new THREE.Mesh(new THREE.BoxGeometry(0.65, 1.3,
